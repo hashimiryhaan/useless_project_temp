@@ -5,34 +5,17 @@
 
 // --------------------------------------------
 // 0. AUDIO UNLOCK (fixes "audio not playing")
-// --------------------------------------------
-//
-// Browsers only allow audio.play() to run
-// without restriction inside the same user
-// gesture that triggered it. Since we call
-// playBrokeGPTAudio() AFTER an `await`
-// (Tesseract OCR can take several seconds),
-// the gesture window has usually expired by
-// the time we try to play, so the browser
-// silently blocks it.
-//
-// Fix: create ONE shared <audio> element and
-// "unlock" it synchronously, immediately on
-// the button click, BEFORE any await. Once a
-// media element has successfully played once
-// during a real click, browsers let you keep
-// reusing that same element later (even after
-// async delays) without needing a fresh gesture.
-// --------------------------------------------
+
 
 const brokeGPTAudioElement = new Audio();
 brokeGPTAudioElement.volume = 1.0;
 
+
+let lastRoastResult = null;
+
 function unlockBrokeGPTAudio() {
 
-    // Play a near-silent, essentially instant
-    // "blip" to unlock the element while we
-    // still have a real user gesture.
+    
     brokeGPTAudioElement.src =
         "data:audio/mpeg;base64,//uQxAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAACcQCA";
 
@@ -64,8 +47,7 @@ function getFinancialCategory(balance) {
         return {
             category: "💀 POOR",
 
-            message:
-                "Your balance is so low, even your UPI app is feeling sorry for you. 😭",
+            messages: poorRoastMessages,
 
             audios: [
                 "audio/poor/thani.mpeg.mp3",
@@ -83,8 +65,7 @@ function getFinancialCategory(balance) {
         return {
             category: "🤑 RICH",
 
-            message:
-                "₹1000+ in your account? Look at you acting like a billionaire! 😂",
+            messages: richRoastMessages,
 
             audios: [
                 "audio/rich/lucky.mp3",
@@ -99,21 +80,47 @@ function getFinancialCategory(balance) {
 }
 
 
-// --------------------------------------------
-// 2. CHOOSE RANDOM AUDIO
-// --------------------------------------------
 
-function getRandomAudio(audioList) {
 
-    if (!audioList || audioList.length === 0) {
+const poorRoastMessages = [
+    "Bro, ee balance kandittu ATM thanne sorry paranju.💀",
+    "Ninte balance kandu Google Pay polum 'try again later' ennu paranju. 😭",
+    "Kashtam mone... ee balance vechu oru chaya polum kudikkan pattilla. ☕😢",
+    "Ninte account balance-um, sunday holiday-um oru pole aanu — onnum illa. 📉",
+    "Gulf-il poyittu polum ee mathiri balance kanditilla mone. Straight-a veetil poyi irikku. ✈️😅",
+    "ATM-il card vachappol machine thanne 'ni ithinu vendi vannathano' ennu chodichu. 🤖💀",
+    "Brode bank account ippo survival mode-il aanu.🎬😭"
+];
+
+const richRoastMessages = [
+    "Brode account-il paisa undu, pakshe future illa.🍛😭",
+    "Eda mone, ee balance kandu bank manager-e polum chaya kudikkan vilichu! 🤑☕",
+    "Ninte account balance kandu Ambani polum oru 'like' kotukkum. 💸😎",
+    "Ithra paisa kandittu account thanne proud aayi.👑",
+    "Balance kandittu ATM thanne 'sir' ennu vilikkan thudangi. 🏧🙏",
+    "Ee kaashinu, Kerala-il oru sqft polum vaangan pattilla, pakshe feeling billionaire aanu. 😂💰",
+    "Ninte balance kandu, next flight Dubai-ku alla, Alps-inu aanu venam. ✈️🏔️",
+    "Pavam RICH ennu vilikkanam, pakshe first class-il alla, sleeper class-il tanne poyikko. 🚆😅",
+    "Balance kandu njan polum oru selfie eduthu, 'wealthy friend circle' kaanikkan. 📸🤑"
+];
+
+
+
+
+function getRandomItem(list) {
+
+    if (!list || list.length === 0) {
         return null;
     }
 
     const randomIndex =
-        Math.floor(Math.random() * audioList.length);
+        Math.floor(Math.random() * list.length);
 
-    return audioList[randomIndex];
+    return list[randomIndex];
 }
+
+// Kept as an alias so nothing else has to change name
+const getRandomAudio = getRandomItem;
 
 
 // --------------------------------------------
@@ -340,6 +347,13 @@ async function analyzeBalanceImage(imageSource) {
         getFinancialCategory(balance);
 
 
+    // Pick a random Manglish roast line
+    const message =
+        getRandomItem(
+            financialResult.messages
+        );
+
+
     // Choose audio
     const audio =
         getRandomAudio(
@@ -356,8 +370,7 @@ async function analyzeBalanceImage(imageSource) {
         category:
             financialResult.category,
 
-        message:
-            financialResult.message,
+        message: message,
 
         audio: audio
     };
@@ -444,6 +457,138 @@ function playBrokeGPTAudio(audioPath) {
 
 
 // --------------------------------------------
+// 5b. ROAST METER ANIMATION
+// --------------------------------------------
+//
+// Swings the gauge needle through a few quick
+// "suspense" positions, then settles on the
+// real position with a bouncy overshoot, like
+// a mechanical dial. Purely cosmetic — driven
+// off `balance`, capped so extreme numbers
+// don't break the dial.
+//
+// Returns the total animation time in ms, so
+// the caller can time the text/audio reveal to
+// land right as the needle stops moving.
+// --------------------------------------------
+
+const ROAST_METER_CAP = 100000; // ₹ at which the needle maxes out
+const ROAST_METER_MIN_ANGLE = -85; // degrees, leftmost ("BROKE")
+const ROAST_METER_MAX_ANGLE = 85;  // degrees, rightmost ("LOADED")
+
+const roastMeterCaptions = [
+    "calculating financial damage...",
+    "consulting the broke-o-meter...",
+    "cross-checking with your dignity...",
+    "running the numbers (it's bad)..."
+];
+
+function animateRoastMeter(balance) {
+
+    const needleGroup =
+        document.getElementById("meterNeedleGroup");
+
+    const caption =
+        document.getElementById("meterCaption");
+
+    if (!needleGroup) {
+        return 0;
+    }
+
+
+    // ------------------------------------
+    // Work out where the needle should end up
+    // ------------------------------------
+
+    const clampedBalance =
+        Math.min(Math.max(balance, 0), ROAST_METER_CAP);
+
+    const normalized =
+        clampedBalance / ROAST_METER_CAP;
+
+    const finalAngle =
+        ROAST_METER_MIN_ANGLE +
+        normalized * (ROAST_METER_MAX_ANGLE - ROAST_METER_MIN_ANGLE);
+
+
+    // ------------------------------------
+    // Snap back to the start with no
+    // transition, in case this isn't the
+    // first scan and the needle is still
+    // sitting wherever it last landed
+    // ------------------------------------
+
+    needleGroup.style.transition = "none";
+    needleGroup.style.transform =
+        "rotate(" + ROAST_METER_MIN_ANGLE + "deg)";
+
+    // Force a reflow so the browser registers the
+    // instant jump above before we re-enable
+    // transitions for the swings below
+    void needleGroup.offsetWidth;
+
+
+    // ------------------------------------
+    // A few quick fake swings for suspense
+    // before the real answer lands
+    // ------------------------------------
+
+    const suspenseSwings = [55, -70, 30, -40];
+    const swingStep = 220; // ms per suspense swing
+
+    let elapsed = 0;
+
+    needleGroup.style.transition =
+        "transform " + (swingStep / 1000) + "s ease-in-out";
+
+    suspenseSwings.forEach(function (angle, index) {
+
+        setTimeout(function () {
+
+            needleGroup.style.transform =
+                "rotate(" + angle + "deg)";
+
+            if (caption) {
+                caption.textContent =
+                    roastMeterCaptions[
+                        index % roastMeterCaptions.length
+                    ];
+            }
+
+        }, elapsed);
+
+        elapsed += swingStep;
+    });
+
+
+    // ------------------------------------
+    // Final settle: slower, elastic overshoot
+    // ------------------------------------
+
+    const settleDuration = 900; // ms
+
+    setTimeout(function () {
+
+        needleGroup.style.transition =
+            "transform " +
+            (settleDuration / 1000) +
+            "s cubic-bezier(0.34, 1.56, 0.64, 1)";
+
+        needleGroup.style.transform =
+            "rotate(" + finalAngle + "deg)";
+
+        if (caption) {
+            caption.textContent = "";
+        }
+
+    }, elapsed);
+
+
+    return elapsed + settleDuration;
+}
+
+
+// --------------------------------------------
 // 6. DISPLAY RESULT
 // --------------------------------------------
 
@@ -451,6 +596,9 @@ function displayBrokeGPTResult(result) {
 
     const resultSection =
         document.getElementById("resultSection");
+
+    const resultCard =
+        document.querySelector(".result-card");
 
     const balanceText =
         document.getElementById("balanceText");
@@ -461,10 +609,39 @@ function displayBrokeGPTResult(result) {
     const roastMessage =
         document.getElementById("roastMessage");
 
+    const shareButton =
+        document.getElementById("shareButton");
+
+
+    // ----------------------------------------
+    // Reset the reveal state from any previous run
+    // ----------------------------------------
+
+    [balanceText, categoryText].forEach(
+        function (el) {
+            el.classList.remove("show");
+        }
+    );
+
+    roastMessage.classList.remove("show");
+    roastMessage.textContent = "";
+
+    categoryText.classList.remove("glitch-text");
+
+    if (resultCard) {
+        resultCard.classList.remove("glitch-active");
+    }
+
+    if (shareButton) {
+        shareButton.style.display = "none";
+    }
+
 
     // ----------------------------------------
     // If balance was not found
     // ----------------------------------------
+    // (no need for meter suspense here - go
+    // straight to the message)
 
     if (!result.success) {
 
@@ -474,58 +651,205 @@ function displayBrokeGPTResult(result) {
         categoryText.innerText =
             "🤷 UNKNOWN";
 
-        roastMessage.innerText =
-            result.message;
-
         resultSection.style.display =
             "block";
+
+        requestAnimationFrame(function () {
+
+            [balanceText, categoryText].forEach(
+                function (el) {
+                    el.classList.add("show");
+                }
+            );
+
+            roastMessage.classList.add("show");
+
+            typewriterEffect(
+                roastMessage,
+                result.message,
+                25
+            );
+
+        });
 
         return;
     }
 
 
     // ----------------------------------------
-    // Show balance
+    // Fill in the text NOW, but it stays
+    // invisible (see .reveal-text CSS) until
+    // the roast meter finishes its animation
     // ----------------------------------------
 
     balanceText.innerText =
         "Available Balance: ₹" +
         result.balance;
 
-
-    // ----------------------------------------
-    // Show category
-    // ----------------------------------------
-
     categoryText.innerText =
         result.category;
 
 
-    // ----------------------------------------
-    // Show roast
-    // ----------------------------------------
-
-    roastMessage.innerText =
-        result.message;
+    // Keep this result around so the share
+    // button can build the card later
+    lastRoastResult = result;
 
 
     // ----------------------------------------
-    // Show result section
+    // Show result section (meter is visible
+    // and starts swinging immediately; the
+    // text below it is still hidden)
     // ----------------------------------------
 
     resultSection.style.display =
         "block";
 
+    const meterDuration =
+        animateRoastMeter(result.balance);
+
 
     // ----------------------------------------
-    // PLAY AUDIO
+    // Once the needle settles: reveal balance
+    // + category, fire the category effect
+    // (confetti / glitch), play audio, then
+    // type out the roast line. The share
+    // button appears once typing finishes.
     // ----------------------------------------
 
-    if (result.audio) {
+    setTimeout(function () {
 
-        playBrokeGPTAudio(
-            result.audio
+        [balanceText, categoryText].forEach(
+            function (el) {
+                el.classList.add("show");
+            }
         );
+
+        triggerCategoryEffect(
+            result.category,
+            resultCard,
+            categoryText
+        );
+
+        if (result.audio) {
+
+            playBrokeGPTAudio(
+                result.audio
+            );
+        }
+
+        roastMessage.classList.add("show");
+
+        typewriterEffect(
+            roastMessage,
+            result.message,
+            25,
+            function () {
+
+                if (shareButton) {
+                    shareButton.style.display =
+                        "inline-block";
+                }
+
+            }
+        );
+
+    }, meterDuration);
+}
+
+
+// --------------------------------------------
+// 6b. TYPEWRITER EFFECT
+// --------------------------------------------
+
+function typewriterEffect(element, text, speedMs, onDone) {
+
+    element.textContent = "";
+
+    let index = 0;
+
+    // Build the string ourselves instead of doing
+    // element.innerText += char, which reads the
+    // RENDERED text back on every tick — and a
+    // trailing space is often collapsed away by
+    // the browser right before the next character
+    // lands, silently eating spaces from the output.
+    let builtText = "";
+
+    function typeNextChar() {
+
+        if (index < text.length) {
+
+            builtText +=
+                text.charAt(index);
+
+            element.textContent =
+                builtText;
+
+            index++;
+
+            setTimeout(typeNextChar, speedMs);
+
+        } else if (onDone) {
+
+            onDone();
+        }
+    }
+
+    typeNextChar();
+}
+
+
+// --------------------------------------------
+// 6c. CATEGORY EFFECT (confetti / glitch)
+// --------------------------------------------
+
+function triggerCategoryEffect(category, resultCard, categoryText) {
+
+    const isRich =
+        category.indexOf("RICH") !== -1;
+
+    if (isRich) {
+
+        if (typeof confetti === "function") {
+
+            confetti({
+                particleCount: 140,
+                spread: 80,
+                startVelocity: 45,
+                origin: { y: 0.6 }
+            });
+
+            // second smaller burst for a bit more flair
+            setTimeout(function () {
+
+                confetti({
+                    particleCount: 60,
+                    spread: 100,
+                    origin: { y: 0.55 }
+                });
+
+            }, 250);
+        }
+
+    } else {
+
+        if (resultCard) {
+
+            resultCard.classList.add("glitch-active");
+
+            setTimeout(function () {
+                resultCard.classList.remove("glitch-active");
+            }, 550);
+        }
+
+        if (categoryText) {
+
+            categoryText.classList.add("glitch-text");
+
+            setTimeout(function () {
+                categoryText.classList.remove("glitch-text");
+            }, 450);
+        }
     }
 }
 
@@ -566,4 +890,148 @@ async function runBrokeGPTAnalysis(imageSource) {
             "Something went wrong while analyzing the image. 😭"
         );
     }
+}
+
+
+// --------------------------------------------
+// 8. SHARE CARD (screenshot via html2canvas)
+// --------------------------------------------
+
+function generateShareCard() {
+
+    if (!lastRoastResult) {
+        return;
+    }
+
+    const shareCard =
+        document.getElementById("shareCard");
+
+    const shareButton =
+        document.getElementById("shareButton");
+
+    if (!shareCard || typeof html2canvas !== "function") {
+        return;
+    }
+
+
+    // ----------------------------------------
+    // Fill in the offscreen template
+    // ----------------------------------------
+
+    const isRich =
+        lastRoastResult.category.indexOf("RICH") !== -1;
+
+    document.getElementById("shareCardEmoji").innerText =
+        isRich ? "🤑" : "💀";
+
+    document.getElementById("shareCardCategory").innerText =
+        lastRoastResult.category;
+
+    document.getElementById("shareCardBalance").innerText =
+        "Balance: ₹" + lastRoastResult.balance;
+
+    document.getElementById("shareCardRoast").innerText =
+        lastRoastResult.message;
+
+
+    // ----------------------------------------
+    // Show a "generating..." state on the button
+    // ----------------------------------------
+
+    const originalButtonText =
+        shareButton ? shareButton.innerText : "";
+
+    if (shareButton) {
+        shareButton.innerText = "📸 GENERATING...";
+        shareButton.disabled = true;
+    }
+
+
+    // ----------------------------------------
+    // Capture, then download (and use the
+    // native share sheet on mobile if available)
+    // ----------------------------------------
+
+    html2canvas(shareCard, {
+        backgroundColor: null,
+        scale: 2
+    }).then(function (canvas) {
+
+        canvas.toBlob(function (blob) {
+
+            if (!blob) {
+                return;
+            }
+
+            const fileName =
+                "brokegpt-roast.png";
+
+            const file =
+                new File([blob], fileName, { type: "image/png" });
+
+
+            // Prefer the native share sheet on mobile
+            if (
+                navigator.canShare &&
+                navigator.canShare({ files: [file] })
+            ) {
+
+                navigator.share({
+                    files: [file],
+                    title: "BrokeGPT Roast",
+                    text: "I just got roasted by BrokeGPT 💀"
+                }).catch(function () {
+                    // user cancelled the share sheet - ignore
+                });
+
+            } else {
+
+                // Fallback: trigger a plain download
+                const url =
+                    URL.createObjectURL(blob);
+
+                const link =
+                    document.createElement("a");
+
+                link.href = url;
+                link.download = fileName;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+
+                setTimeout(function () {
+                    URL.revokeObjectURL(url);
+                }, 5000);
+            }
+
+            if (shareButton) {
+                shareButton.innerText = originalButtonText;
+                shareButton.disabled = false;
+            }
+
+        }, "image/png");
+
+    }).catch(function (error) {
+
+        console.error("Could not generate share card:", error);
+
+        if (shareButton) {
+            shareButton.innerText = originalButtonText;
+            shareButton.disabled = false;
+        }
+
+        alert("Couldn't generate the share image 😭 try again.");
+    });
+}
+
+
+const shareButtonElement =
+    document.getElementById("shareButton");
+
+if (shareButtonElement) {
+
+    shareButtonElement.addEventListener(
+        "click",
+        generateShareCard
+    );
 }
