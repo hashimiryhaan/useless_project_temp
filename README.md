@@ -80,7 +80,12 @@ The Broke-o-Meter dramatically reveals the user's financial status before delive
 
 ### Project Demo
 # Video
-![alt text](demo1.mp4)
+
+
+https://github.com/user-attachments/assets/aec4d4c0-a752-42ad-bc40-2bc17493da71
+
+
+
 The demo demonstrates:
 
 ![alt text](image-4.png)
