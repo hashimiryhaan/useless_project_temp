@@ -50,17 +50,29 @@ Then visit http://localhost:8000 in your browser.
 For Software:
 
 # Screenshots (Add at least 3)
-![homepage](image.png)
+
+<p align="center">
+  <img src="image.png" alt="Homepage" width="800">
+</p>
+
 The landing page introduces BrokeGPT and lets the user choose how they want to expose their financial situation.
 
-![alt text](image-1.png)
+<p align="center">
+  <img src="image-1.png" alt="Camera Upload" width="800">
+</p>
 Users can either scan their balance using a camera or upload a screenshot.
 
-![alt text](image-2.png)
+<p align="center">
+  <img src="image-2.png" alt="OCR Detection" width="800">
+</p>
 After selecting an image, BrokeGPT uses OCR to identify the available balance.
 
-![alt text](image-3.png)
+<p align="center">
+  <img src="image-3.png" alt="Broke-o-Meter" width="800">
+</p>
+
 The Broke-o-Meter dramatically reveals the user's financial status before delivering the final roast.
+
 
 # Diagrams
 ![alt text](workflow-diagram.png)
